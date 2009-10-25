@@ -93,6 +93,12 @@ class Macros(object):
 		return info
 	
 	def macro_numericresults(self, block_lines):
+		"""
+		Produces a table containing numeric data. Numbers must be tab separated. EG:
+			X	Y	!!numericresults
+			37	1
+			38	2
+		"""
 		result = ['\\begin{figure}\n']
 		cols = len(separate_tabs(block_lines[0]))
 		result.append('	\\begin{tabular}{%s}\n' % ('l' * cols))
@@ -105,6 +111,10 @@ class Macros(object):
 		return ''.join(result)
 	
 	def macro_floatgraphic(self, args):
+		"""
+		Includes a graphic, places it in a figure, and gives it a label. Usage:
+		!!floatgraphic filename, Caption goes here
+		"""
 		if ',' in args:
 			filename, caption = args.split(',', 1)
 			caption = caption.strip()
@@ -125,7 +135,11 @@ class Macros(object):
 	
 	def macro_floatcode(self, block_lines):
 		"""
-		Includes magical final-line caption support.
+		Code inside a figure. If the final line is a caption, does the right
+		thing. Usage:
+			code line 1	!!floatcode
+			final code line
+			~~ <<label.if.wanted>> Caption if wanted ~~
 		"""
 		if block_lines[-1].startswith('~~'):
 			caption = block_lines.pop()
@@ -140,6 +154,9 @@ class Macros(object):
 		return '\n'.join(result)
 	
 	def macro_floattable(self, block_lines):
+		"""
+		Flaoting table, similar to numericresults
+		"""
 		if block_lines[-1].startswith('~~'):
 			caption = block_lines.pop()
 		numcols = block_lines[0].count('\t') + 1
