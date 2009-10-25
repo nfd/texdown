@@ -1,0 +1,33 @@
+	title			Texdown Demo	!!techreport
+	copyrightyear	2010
+	author			Nicholas FitzRoy-Dale	nicholas@lardcave.net	GEN_AFFIL
+	author			Someone Else			someone@example.com		GEN_AFFIL
+
+== Abstract ==
+Texdown is a markup language for LaTeX. It probably supports the LaTeX that you use, and can be easily extended.
+
+== Introduction ==
+Texdown is yet another /layer of abstraction/ over typing raw PostScript commands into a text editor. Texdown is inspired by the simple markup languages popular on the Web for writing blog entries and comments (its name is a reference to Markdown[[Markdown]], but it's not actually very similar to Markdown at all). 
+
+== Syntax examples ==
+
+*This is bold*.
+
+/This is italicised./
+
+''This is mono-spaced''.
+
+ * Milk
+ * Eggs
+ * Pears
+
+ Milk: An opaque white liquid.
+ Eggs: A round or oval body.
+ Pear: A tree of genus Pyrus.
+
+Please refer to Figure [figure.boilerplate].
+
+	if __name__ == '__main__':	!!floatcode
+		sys.exit(main(sys.argv))
+	~~ <<figure.boilerplate>> Python boilerplate ~~
+
