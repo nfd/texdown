@@ -44,9 +44,6 @@ description:
 mathmode:
 	match	\$(.*?)\$
 	repl	$\1$
-escape_percents:
-	match	(?!^)%
-	repl	\%
 i_with_diaeresis:
 	match	ï
 	repl	\\"{\\i}
@@ -98,6 +95,9 @@ bold:
 quotes:
 	match	"(.+?)"
 	repl	``\1''
+escape_percents:
+	match	(?!^)%
+	repl	\%
 """
 CONVERSIONS = {}
 CONVERSIONS_ORDER = []
