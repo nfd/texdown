@@ -20,6 +20,8 @@ immediately preceded or succeeded by another match of the same type.
 """
 import re
 import sys
+# Attempt to import 'localmacros' from cwd preferentially.
+sys.path.insert(0, '.')
 import localmacros
 
 # Conversions consisting of the regular expression to match, and
@@ -37,6 +39,7 @@ startline:
 bullets:
 	match	^( +)\*(.*?)\n
 	func	bullets
+	incl	escape_underscores escape_percents
 description:
 	match	^ (.+?):(.*)\n
 	func	description
@@ -54,15 +57,15 @@ chapter:
 section:
 	match	^==(.*)==
 	repl	\\section{\1}
-	incl	label
+	incl	label escape_underscores escape_percents
 subsection:
 	match	^=(.*)=
 	repl	\\subsection{\1}
-	incl	label
+	incl	label escape_underscores escape_percents
 subsubsection:
 	match	^-(.*)-
 	repl	\\subsubsection{\1}
-	incl	label
+	incl	label escape_underscores escape_percents
 label:
 	match	<<([^<]*)>>
 	repl	\\label{\1}
@@ -74,9 +77,6 @@ teletype:
 	match	''(.*?)''
 	repl	\\texttt{\1}
 	incl	escape_underscores
-escape_underscores:
-	match	_
-	repl	\_
 cite:
 	match	\[\[([^\[]*)\]\]
 	repl	~\\cite{\1}
@@ -92,9 +92,15 @@ italics:
 bold:
 	match	[^^ ]\*([^\*]*)\*
 	repl	\\textbf{\1}
+subscript:
+	match	__(.*?)__
+	repl	\\subscript{\1}
 quotes:
 	match	"(.+?)"
 	repl	``\1''
+escape_underscores:
+	match	_
+	repl	\_
 escape_percents:
 	match	(?!^)%
 	repl	\%
@@ -118,6 +124,9 @@ for line in CONVERSIONS_TXT.split('\n'):
 		CONVERSIONS[hlname] = {}
 		CONVERSIONS_ORDER.append(hlname)
 
+class ConversionError(Exception):
+	pass
+
 class Converter(object):
 	def __init__(self, texdown):
 		self.block_cmd = None
@@ -125,7 +134,7 @@ class Converter(object):
 		self.macros = {}
 
 		self.register_macros(self)
-		self.register_macros(localmacros.Macros())
+		self.register_macros(localmacros.Macros(self.convert))
 
 		self.latex = self.convert(texdown)
 	
@@ -264,7 +273,8 @@ class Converter(object):
 
 		if open_start:
 			result.append('\\begin{description}\n')
-		result.append('\t\\item[%s] %s\n' % (match.group(1), match.group(2)))
+		key, value = match.group(1), self.convert(match.group(2))
+		result.append('\t\\item[%s] %s\n' % (key, value))
 		if open_end:
 			result.append('\\end{description}\n')
 
@@ -276,6 +286,8 @@ class Converter(object):
 		line = match.group(1)
 		if open_start:
 			# Expect a block command.
+			if '\t!!' not in line:
+				raise ConversionError("Block does not end with \\t!!macroname")
 			line, self.block_cmd = line.rsplit('\t!!', 1)
 		self.block_accum.append(line)
 		if open_end:
@@ -291,7 +303,10 @@ class Converter(object):
 		command = match.group(1)
 		args = match.group(2)
 
-		handler = self.macros[command]
+		try:
+			handler = self.macros[command]
+		except KeyError:
+			raise ConversionError("Macro '%s' not found." % (command))
 		return handler(args)
 	
 if __name__ == '__main__':
@@ -299,7 +314,11 @@ if __name__ == '__main__':
 	data = handle.read()
 	handle.close()
 
-	c = Converter(data)
+	try:
+		c = Converter(data)
+	except ConversionError, e:
+		print "Error: %s" % (str(e))
+		sys.exit(1)
 
 	if len(sys.argv) == 3:
 		handle = codecs.open(sys.argv[2], 'w', encoding = 'utf-8')
