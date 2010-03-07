@@ -30,7 +30,7 @@ import localmacros
 # listed.
 CONVERSIONS_TXT = r"""
 block_cmd:
-	match	^\t(.*)\n
+	match	^\t(.*)$
 	func	block_cmd
 	incl	caption
 startline:
@@ -39,7 +39,11 @@ startline:
 bullets:
 	match	^( +)\*(.*?)\n
 	func	bullets
-	incl	escape_underscores escape_percents
+	incl	escape_percents quotes teletype bold cite ref escape_underscores
+numbers:
+	match	^( +)[0-9]+\.(.*?)\n
+	func	numbers
+	incl	escape_percents quotes teletype bold cite ref escape_underscores
 description:
 	match	^ (.+?):(.*)\n
 	func	description
@@ -47,9 +51,6 @@ description:
 mathmode:
 	match	\$(.*?)\$
 	repl	$\1$
-i_with_diaeresis:
-	match	ï
-	repl	\\"{\\i}
 chapter:
 	match	^##(.*)##
 	repl	\\chapter{\1}
@@ -57,28 +58,31 @@ chapter:
 section:
 	match	^==(.*)==
 	repl	\\section{\1}
-	incl	label escape_underscores escape_percents
+	incl	label escape_underscores escape_percents teletype
 subsection:
 	match	^=(.*)=
 	repl	\\subsection{\1}
-	incl	label escape_underscores escape_percents
+	incl	label escape_underscores escape_percents teletype
 subsubsection:
 	match	^-(.*)-
 	repl	\\subsubsection{\1}
-	incl	label escape_underscores escape_percents
+	incl	label escape_underscores escape_percents teletype
 label:
 	match	<<([^<]*)>>
 	repl	\\label{\1}
 caption:
 	match	\~\~ ([^\~]*) \~\~
 	repl	\\caption{\1}
-	incl	label
+	incl	label cite
 teletype:
 	match	''(.*?)''
 	repl	\\texttt{\1}
 	incl	escape_underscores
+italics:
+	match	([^A-Za-z])/([^ ].+?[^ ])/([^A-Za-z])
+	repl	\1\\textit{\2}\3
 cite:
-	match	\[\[([^\[]*)\]\]
+	match	 *\[\[([^\[]*)\]\]
 	repl	~\\cite{\1}
 cite_fixme:
 	match	\[\[FIXME\]\]
@@ -86,24 +90,25 @@ cite_fixme:
 ref:
 	match	\[([^\[]*)\]
 	repl	\\ref{\1}
-italics:
-	match	/([^ ].*?[^ ])/
-	repl	\\textit{\1}
 bold:
-	match	[^^ ]\*([^\*]*)\*
-	repl	\\textbf{\1}
+	match	([^^])\*([^\*]+)\*
+	repl	\1\\textbf{\2}
 subscript:
 	match	__(.*?)__
 	repl	\\subscript{\1}
 quotes:
 	match	"(.+?)"
 	repl	``\1''
+	incl	escape_underscores escape_percents escape_ampersands
 escape_underscores:
 	match	_
 	repl	\_
 escape_percents:
 	match	(?!^)%
 	repl	\%
+escape_ampersands:
+	match	&
+	repl	\&
 """
 CONVERSIONS = {}
 CONVERSIONS_ORDER = []
@@ -136,14 +141,14 @@ class Converter(object):
 		self.register_macros(self)
 		self.register_macros(localmacros.Macros(self.convert))
 
-		self.latex = self.convert(texdown)
+		self.latex = self.convert(texdown, magic = True)
 	
 	def register_macros(self, obj):
 		for key in dir(obj):
 			if key.startswith('macro_'):
 				self.macros[key[6:]] = getattr(obj, key)
 
-	def convert(self, texdown):
+	def convert(self, texdown, magic = False):
 		"""
 		Conversion:
 			Text is list of (chunk, names of conversions for this chunk),
@@ -154,18 +159,19 @@ class Converter(object):
 		#for match, replacement in CONVERSIONS:
 		#	texdown = self.convert_one(texdown, match, replacement)
 
-		# Hack: add document ending here.
-		texdown += self.macros['end_document'](None)
+		if magic:
+			# Hack: add document ending here.
+			texdown += self.macros['end_document'](None)
 
-		# Hack: magical abstract conversion.
-		abstract_start = texdown.find('\section{ Abstract }')
-		if abstract_start != -1:
-			abstract_end = texdown.find('\section', abstract_start + 1)
-			texdown = texdown[:abstract_start] \
-				+ '\\begin{abstract}\n' \
-				+ texdown[abstract_start + 20: abstract_end] \
-				+ '\\end{abstract}\n' \
-				+ texdown[abstract_end:]
+			# Hack: magical abstract conversion.
+			abstract_start = texdown.find('\section{ Abstract }')
+			if abstract_start != -1:
+				abstract_end = texdown.find('\section', abstract_start + 1)
+				texdown = texdown[:abstract_start] \
+					+ '\\begin{abstract}\n' \
+					+ texdown[abstract_start + 20: abstract_end] \
+					+ '\\end{abstract}\n' \
+					+ texdown[abstract_end:]
 
 		return texdown
 	
@@ -268,13 +274,25 @@ class Converter(object):
 
 		return ''.join(result)
 	
+	def macro_numbers(self, match, open_start, open_end):
+		result = []
+
+		if open_start:
+			result.append('\\begin{enumerate}\n')
+		result.append('\t\\item %s\n' % match.group(2))
+		if open_end:
+			result.append('\\end{enumerate}\n')
+
+		return ''.join(result)
+
+	
 	def macro_description(self, match, open_start, open_end):
 		result = []
 
 		if open_start:
 			result.append('\\begin{description}\n')
-		key, value = match.group(1), self.convert(match.group(2))
-		result.append('\t\\item[%s] %s\n' % (key, value))
+		key, value = self.convert(match.group(1)), self.convert(match.group(2))
+		result.append('\t\\item[%s:] %s\n' % (key, value))
 		if open_end:
 			result.append('\\end{description}\n')
 
@@ -289,7 +307,8 @@ class Converter(object):
 			if '\t!!' not in line:
 				raise ConversionError("Block does not end with \\t!!macroname")
 			line, self.block_cmd = line.rsplit('\t!!', 1)
-		self.block_accum.append(line)
+		if line.strip():
+			self.block_accum.append(line)
 		if open_end:
 			handler = self.macros[self.block_cmd]
 			result = handler(self.block_accum)
