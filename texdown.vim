@@ -1,8 +1,8 @@
 syn match texdowncomment "^%.*" contains=texdownfixme
 syn match texdownchapter /^##.*##/
-syn match texdownsection /^==.*==/
-syn match texdownsubsection /^=[^=].*[^=]=/
-syn match texdownsubsubsection /^-[^-].*-/
+syn match texdownsection /^==.*==/ contains=texdownlabel
+syn match texdownsubsection /^=[^=].*[^=]=/ contains=texdownlabel
+syn match texdownsubsubsection /^-[^-].*-/ contains=texdownlabel
 syn match texdowncaption /\~\~ [^\~]* \~\~/ contains=texdownlabel
 syn match texdownlabel /<<[^<]*>>/
 syn match texdownfixme /FIXME:.*$/ contained
@@ -16,12 +16,14 @@ syn match texdownargs /[^^]!!.*/
 syn match texdowncommand /^!!.*/
 syn match texdowndefinition /^ [^:]*:/
 syn match texdownbullet /^ \+\*/
+syn match texdownenum /^ \+[0-9]\+\./
 syn region texdownquote matchgroup=Normal start="^\"\"\"" end = "^\"\"\"" 
 syn region texdowntable start="^!! table" end = "^!!"
 
 hi link texdowncomment Comment
 hi link texdownquote Comment
 hi texdownbullet guibg=gray
+hi texdownenum guibg=gray
 hi TexdownHeading guifg=SlateBlue gui=bold
 hi TexdownMildHeading guifg=SlateBlue
 hi TexdownMilderHeading guifg=DarkBlue
