@@ -39,11 +39,11 @@ startline:
 bullets:
 	match	^( +)\*(.*?)\n
 	func	bullets
-	incl	escape_percents quotes teletype bold cite ref escape_underscores
+	incl	escape_percents quotes teletype bold italics cite ref escape_underscores
 numbers:
 	match	^( +)[0-9]+\.(.*?)\n
 	func	numbers
-	incl	escape_percents quotes teletype bold cite ref escape_underscores
+	incl	escape_percents quotes teletype bold italics cite ref escape_underscores
 description:
 	match	^ (.+?):(.*)\n
 	func	description
