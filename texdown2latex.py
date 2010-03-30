@@ -39,11 +39,11 @@ startline:
 bullets:
 	match	^( +)\*(.*?)\n
 	func	bullets
-	incl	escape_percents quotes teletype bold italics cite ref escape_underscores
+	incl	escape_percents teletype quotes bold italics cite ref escape_underscores
 numbers:
 	match	^( +)[0-9]+\.(.*?)\n
 	func	numbers
-	incl	escape_percents quotes teletype bold italics cite ref escape_underscores
+	incl	escape_percents teletype quotes bold italics cite ref escape_underscores
 description:
 	match	^ (.+?):(.*)\n
 	func	description
@@ -74,13 +74,6 @@ caption:
 	match	\~\~ ([^\~]*) \~\~
 	repl	\\caption{\1}
 	incl	label cite
-teletype:
-	match	''(.*?)''
-	repl	\\texttt{\1}
-	incl	escape_underscores
-italics:
-	match	([^A-Za-z])/([^ ].+?[^ ])/([^A-Za-z])
-	repl	\1\\textit{\2}\3
 cite:
 	match	 *\[\[([^\[]*)\]\]
 	repl	~\\cite{\1}
@@ -90,6 +83,13 @@ cite_fixme:
 ref:
 	match	\[([^\[]*)\]
 	repl	\\ref{\1}
+teletype:
+	match	''(.+?)''
+	repl	\\texttt{\1}
+	incl	escape_underscores
+italics:
+	match	([^A-Za-z]|^)/([^ ].+?[^ ])/([^A-Za-z]|$)
+	repl	\1\\textit{\2}\3
 bold:
 	match	([^^])\*([^\*]+)\*
 	repl	\1\\textbf{\2}

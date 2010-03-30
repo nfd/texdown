@@ -1,6 +1,13 @@
 import re
 
 AFFILIATIONS = {
+	'NICTAUNSWThanks': r"""NICTA\thanks{
+      NICTA is funded by the Australian Government as represented by the
+      Department of Broadband, Communications and the Digital Economy
+      and the Australian Research Council through the ICT Centre of
+      Excellence program.
+    } and The University of New South Wales\\
+    Sydney, Australia""",
 	'GEN_AFFIL': r"""Insert Affiliation Here\\
 		City, Country""",
 }
@@ -9,6 +16,12 @@ AUTHOR = r"""
   \authorinfo{%(author0)s}
 		{%(author2)s}
 		{%(author1)s}
+"""
+
+AUTHOR_PLAIN = r"""
+	\author{%(author0)s\\
+		%(author1)s \\
+		%(author2)s}
 """
 
 SIGPLANPAPER = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
@@ -51,22 +64,63 @@ TECHREPORT = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
   \maketitle
 """
 
+NICTATR = r"""\documentclass[preprint,natbib,10pt]{article}
+
+\usepackage{graphicx}
+\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage[pdfborder={0 0 0}]{hyperref}
+
+\makeatletter 
+\g@addto@macro\@verbatim\small 
+\makeatother 
+
+\begin{document}
+  \title{%(title0)s}
+
+	%(AUTHORS)s
+  \maketitle
+"""
+
 END_DOCUMENT=r"""
 	\bibliographystyle{plainnat}
 	\bibliography{papers}
 	\end{document}
 """
 
+END_DOCUMENT_PLAIN=r"""
+	\bibliographystyle{plain}
+	\bibliography{papers}
+	\end{document}
+"""
+
+END_DOCUMENT_NIL = ''
+
 
 def separate_tabs(line):
 	return re.split(r'\t+', line)
 
 class Macros(object):
+	def __init__(self, convert_cmd = None):
+		self.end_document = END_DOCUMENT_NIL
+		self.convert_cmd = convert_cmd
+		self.page_width_mm = 210 - 89 # subtract margins
+
 	def macro_sigplanpaper(self, block_lines):
+		self.end_document = END_DOCUMENT_STD
+		self.author = AUTHOR
 		return SIGPLANPAPER % self.anypaper(block_lines)
 
 	def macro_techreport(self, block_lines):
+		self.end_document = END_DOCUMENT_STD
+		self.author = AUTHOR
 		return TECHREPORT % self.anypaper(block_lines)
+
+	def macro_nictatr(self, block_lines):
+		self.end_document = END_DOCUMENT_PLAIN
+		self.author = AUTHOR_PLAIN
+		return NICTATR % self.anypaper(block_lines)
 	
 	def anypaper(self, block_lines):
 		info = {'AUTHORS': '?authors',
@@ -83,7 +137,7 @@ class Macros(object):
 			if key == 'author':
 				subst = {'author0': line[0], 'author1': line[1],
 					'author2': AFFILIATIONS[line[2]]}
-				authors.append(AUTHOR % subst)
+				authors.append(self.author % subst)
 			else:
 				for idx in range(len(line)):
 					info[key + str(idx)] = line[idx]
@@ -92,23 +146,69 @@ class Macros(object):
 			info['AUTHORS'] = '\n'.join(authors)
 		return info
 	
-	def macro_numericresults(self, block_lines):
+	def fancy_table(self, block_lines, bold_first_col = False, check_for_sizes = False):
 		"""
-		Produces a table containing numeric data. Numbers must be tab separated. EG:
+		Produces a table containing data. Numbers must be tab separated. EG:
 			X	Y	!!numericresults
 			37	1
 			38	2
 		"""
-		result = ['\\begin{figure}\n']
-		cols = len(separate_tabs(block_lines[0]))
-		result.append('	\\begin{tabular}{%s}\n' % ('l' * cols))
 
+		if block_lines[-1].startswith('~~'):
+			caption = block_lines.pop()
+		result = ['\\begin{table}\n']
+
+		block_lines = [separate_tabs(line) for line in block_lines]
+		cols = len(block_lines[0])
+
+		latex_sizecmd = 'l' * cols # The default
+
+		if check_for_sizes:
+			# The first row may contain size information of the form !\d+%. If
+			# it does, use 'p' rather than 'l' to lay out the table, and base
+			# the overall size on the known page width.
+			all_sizes_percent = [-1] * cols
+			found_one = False
+			for col_num, element in enumerate(block_lines[0]):
+				matcher = re.match(r'.*!([0-9]+)%$', element)
+				if matcher:
+					found_one = True
+					all_sizes_percent[col_num] = int(matcher.group(1))
+					block_lines[0][col_num] = element[:element.rfind('!')]
+
+			if found_one:
+				# Assign any missing numbers
+				perc_left = 100
+				for col_num in range(cols):
+					if all_sizes_percent[col_num] == -1:
+						all_sizes_percent[col_num] = perc_left
+					else:
+						perc_left -= all_sizes_percent[col_num]
+
+				# Convert to mm
+				all_sizes_mm = [(self.page_width_mm * col_size) / 100 \
+						for col_size \
+						in all_sizes_percent]
+				latex_sizecmd = ''.join('p{%dmm}' % (size_mm) for size_mm in all_sizes_mm)
+
+		result.append('	\\begin{tabular}{%s}\n' % latex_sizecmd)
+
+		count = 0
 		for line in block_lines:
-			result.append('\t' + ' & '.join(separate_tabs(line)) + r'\\' + '\n')
+			elements = [self.convert_cmd(element) for element in line]
+			if count == 0 and bold_first_col:
+				elements = [r'\textbf{%s}' % (element) for element in elements]
+			result.append('\t' + ' & '.join(elements) + r'\\' + '\n')
+			count += 1
 
 		result.append('	\\end{tabular}\n')
-		result.append('\\end{figure}\n')
+		if caption:
+			result.append(caption)
+		result.append('\\end{table}\n')
 		return ''.join(result)
+
+	def macro_numericresults(self, block_lines):
+		return self.fancy_table(block_lines)
 	
 	def macro_floatgraphic(self, args):
 		"""
@@ -122,18 +222,26 @@ class Macros(object):
 			filename = args
 			caption = None
 
+		label = filename
+		if '/' in label:
+			label = label.split('/')[-1]
+		if '#' in label:
+			filename = filename.split('#')[0]
+			label = label.replace('#', '.')
+		label = label.replace('-', '.')
+
 		result = [
 			'\\begin{figure}[htb]',
 			'	\\begin{center}',
 			'		\\includegraphics{figures/%s}' % (filename),
 			'	\\end{center}',
-			'	\\caption{\\label{figure.%s}%s}' % (filename, caption),
+			'	\\caption{\\label{figure.%s}%s}' % (label, caption),
 			'\\end{figure}',
 		]
 
 		return '\n'.join(result)
 	
-	def macro_floatcode(self, block_lines):
+	def macro_floatcode(self, block_lines, placement_spec = None):
 		"""
 		Code inside a figure. If the final line is a caption, does the right
 		thing. Usage:
@@ -141,10 +249,14 @@ class Macros(object):
 			final code line
 			~~ <<label.if.wanted>> Caption if wanted ~~
 		"""
+		if placement_spec is None:
+			placement_spec = 'htb'
+
+		caption = None
 		if block_lines[-1].startswith('~~'):
 			caption = block_lines.pop()
 		block_lines = [line.replace('\t', '  ') for line in block_lines]
-		result = ['\\begin{figure}[htb]']
+		result = ['\\begin{figure}[%s]' % (placement_spec)]
 		result.append('\\begin{verbatim}')
 		result.extend(block_lines)
 		result.append('\\end{verbatim}')
@@ -153,24 +265,21 @@ class Macros(object):
 		result.append('\\end{figure}')
 		return '\n'.join(result)
 	
+	def macro_exactfloatcode(self, block_lines):
+		return self.macro_floatcode(block_lines, 'h!')
+	
 	def macro_floattable(self, block_lines):
-		"""
-		Flaoting table, similar to numericresults
-		"""
-		if block_lines[-1].startswith('~~'):
-			caption = block_lines.pop()
-		numcols = block_lines[0].count('\t') + 1
-		block_lines = [line.replace('\t', ' & ') for line in block_lines]
-		result = ['\\begin{figure}',
-			'\\begin{tabular}{%s}' % ('l' * numcols),
-		]
-		for line in block_lines:
-			result.append(line + r' \\')
-		result.append('\\end{tabular}')
-		if caption:
-			result.append(caption)
-		result.append('\\end{figure}')
-		return '\n'.join(result)
+		return self.fancy_table(block_lines, bold_first_col = True, check_for_sizes = True)
+	
+	def macro_blockquote(self, block_lines):
+		# Special-case attribution line.
+		if block_lines[-1].startswith('--'):
+			block_lines[-1] = r'\begin{flushright} --' +\
+				self.convert_cmd(block_lines[-1][2:]) +\
+				r'\end{flushright}'
+		result = [r'\begin{quote}'] + block_lines + [r'\end{quote}']
+		return '\n'.join(result) + '\n'
 
 	def macro_end_document(self, args):
-		return END_DOCUMENT
+		return self.end_document
+
