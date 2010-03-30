@@ -91,8 +91,8 @@ italics:
 	match	([^A-Za-z]|^)/([^ ].+?[^ ])/([^A-Za-z]|$)
 	repl	\1\\textit{\2}\3
 bold:
-	match	([^^])\*([^\*]+)\*
-	repl	\1\\textbf{\2}
+	match	\*([^\*]+)\*
+	repl	\\textbf{\1}
 subscript:
 	match	__(.*?)__
 	repl	\\subscript{\1}
