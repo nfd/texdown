@@ -156,6 +156,8 @@ class Macros(object):
 
 		if block_lines[-1].startswith('~~'):
 			caption = block_lines.pop()
+		else:
+			caption = None
 		result = ['\\begin{table}\n']
 
 		block_lines = [separate_tabs(line) for line in block_lines]
