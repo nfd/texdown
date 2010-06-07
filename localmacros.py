@@ -135,8 +135,13 @@ class Macros(object):
 			key = line.pop(0)
 
 			if key == 'author':
-				subst = {'author0': line[0], 'author1': line[1],
-					'author2': AFFILIATIONS[line[2]]}
+				subst = {'author0': line[0], 'author1': line[1]}
+				if line[2].startswith('"'):
+					# Directly-written affiliation
+					assert line[2].endswith('"')
+					subst['author2'] = line[2][1:-1]
+				else:
+					subst['author2'] = AFFILIATIONS[line[2]]
 				authors.append(self.author % subst)
 			else:
 				for idx in range(len(line)):
@@ -146,7 +151,8 @@ class Macros(object):
 			info['AUTHORS'] = '\n'.join(authors)
 		return info
 	
-	def fancy_table(self, block_lines, bold_first_col = False, check_for_sizes = False):
+	def fancy_table(self, block_lines, check_for_sizes = False,
+				make_float = True):
 		"""
 		Produces a table containing data. Numbers must be tab separated. EG:
 			X	Y	!!numericresults
@@ -158,12 +164,14 @@ class Macros(object):
 			caption = block_lines.pop()
 		else:
 			caption = None
-		result = ['\\begin{table}\n']
+		result = []
+		if make_float:
+			result.append('\\begin{table}\n')
 
 		block_lines = [separate_tabs(line) for line in block_lines]
 		cols = len(block_lines[0])
 
-		latex_sizecmd = 'l' * cols # The default
+		latex_sizes = ['l'] * cols # The default
 
 		if check_for_sizes:
 			# The first row may contain size information of the form !\d+%. If
@@ -191,22 +199,38 @@ class Macros(object):
 				all_sizes_mm = [(self.page_width_mm * col_size) / 100 \
 						for col_size \
 						in all_sizes_percent]
-				latex_sizecmd = ''.join('p{%dmm}' % (size_mm) for size_mm in all_sizes_mm)
+				latex_sizes = ['p{%dmm}' % (size_mm) for size_mm in all_sizes_mm]
 
+		# Check for magical alignment of columns.
+		# Left-alignment (the default): cells neither start nor end with a space.
+		# Right-alignment: At least one cell starts with a space; no cell ends with one.
+		# Centered alignment: At least one cell both starts and ends with a space.
+		# at least one entry with a space.
+		for col_num in range(cols):
+			align = latex_sizes[col_num]
+			if len(align) == 1 and align in 'lcr':
+				for line in block_lines:
+					cell = line[col_num]
+					if cell.startswith(' ') and align == 'l':
+						align = 'r'
+					if cell.endswith(' '):
+						align = 'c'
+				latex_sizes[col_num] = align
+
+		latex_sizecmd = ''.join(latex_sizes)
 		result.append('	\\begin{tabular}{%s}\n' % latex_sizecmd)
 
 		count = 0
 		for line in block_lines:
 			elements = [self.convert_cmd(element) for element in line]
-			if count == 0 and bold_first_col:
-				elements = [r'\textbf{%s}' % (element) for element in elements]
 			result.append('\t' + ' & '.join(elements) + r'\\' + '\n')
 			count += 1
 
 		result.append('	\\end{tabular}\n')
 		if caption:
 			result.append(caption)
-		result.append('\\end{table}\n')
+		if make_float:
+			result.append('\\end{table}\n')
 		return ''.join(result)
 
 	def macro_numericresults(self, block_lines):
@@ -271,7 +295,10 @@ class Macros(object):
 		return self.macro_floatcode(block_lines, 'h!')
 	
 	def macro_floattable(self, block_lines):
-		return self.fancy_table(block_lines, bold_first_col = True, check_for_sizes = True)
+		return self.fancy_table(block_lines, check_for_sizes = True)
+	
+	def macro_inlinetable(self, block_lines):
+		return self.fancy_table(block_lines, check_for_sizes = True, make_float = False)
 	
 	def macro_blockquote(self, block_lines):
 		# Special-case attribution line.
