@@ -12,18 +12,6 @@ AFFILIATIONS = {
 		City, Country""",
 }
 
-AUTHOR = r"""
-  \authorinfo{%(author0)s}
-		{%(author2)s}
-		{%(author1)s}
-"""
-
-AUTHOR_PLAIN = r"""
-	\author{%(author0)s\\
-		%(author1)s \\
-		%(author2)s}
-"""
-
 SIGPLANPAPER = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
 
 \usepackage{graphicx}
@@ -45,7 +33,7 @@ SIGPLANPAPER = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
   \maketitle
 """
 
-TECHREPORT = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
+TECHREPORT = r"""\documentclass[preprint,natbib,10pt]{article}
 
 \usepackage{graphicx}
 \setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
@@ -101,6 +89,22 @@ END_DOCUMENT_NIL = ''
 def separate_tabs(line):
 	return re.split(r'\t+', line)
 
+def make_author(name, email, affiliation):
+	all_info = [name]
+	if email:
+		all_info.append(r"\\" + "\n\t\t%s" % (email))
+	if affiliation:
+		all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+	return r"	\authorinfo{%s}" % (''.join(all_info))+ "\n" 
+
+def make_author_plain(name, email, affiliation):
+	all_info = [name]
+	if email:
+		all_info.append(r"\\" + "\n\t\t%s" % (email))
+	if affiliation:
+		all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+	return r"	\author{%s}" % (''.join(all_info))+ "\n" 
+
 class Macros(object):
 	def __init__(self, convert_cmd = None):
 		self.end_document = END_DOCUMENT_NIL
@@ -108,18 +112,18 @@ class Macros(object):
 		self.page_width_mm = 210 - 89 # subtract margins
 
 	def macro_sigplanpaper(self, block_lines):
-		self.end_document = END_DOCUMENT_STD
-		self.author = AUTHOR
+		self.end_document = END_DOCUMENT_PLAIN
+		self.author = make_author
 		return SIGPLANPAPER % self.anypaper(block_lines)
 
 	def macro_techreport(self, block_lines):
-		self.end_document = END_DOCUMENT_STD
-		self.author = AUTHOR
+		self.end_document = END_DOCUMENT_PLAIN
+		self.author = make_author_plain
 		return TECHREPORT % self.anypaper(block_lines)
 
 	def macro_nictatr(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
-		self.author = AUTHOR_PLAIN
+		self.author = make_author_plain
 		return NICTATR % self.anypaper(block_lines)
 	
 	def anypaper(self, block_lines):
@@ -135,14 +139,21 @@ class Macros(object):
 			key = line.pop(0)
 
 			if key == 'author':
-				subst = {'author0': line[0], 'author1': line[1]}
-				if line[2].startswith('"'):
-					# Directly-written affiliation
-					assert line[2].endswith('"')
-					subst['author2'] = line[2][1:-1]
+				author_name = line[0]
+				if len(line) >= 2:
+					author_email = line[1]
 				else:
-					subst['author2'] = AFFILIATIONS[line[2]]
-				authors.append(self.author % subst)
+					author_email = None
+				if len(line) >= 3:
+					if line[2].startswith('"'):
+						# Directly-written affiliation
+						assert line[2].endswith('"')
+						author_affil = line[2][1:-1]
+					else:
+						author_affil = AFFILIATIONS[line[2]]
+				else:
+					author_affil = None
+				authors.append(self.author(author_name, author_email, author_affil))
 			else:
 				for idx in range(len(line)):
 					info[key + str(idx)] = line[idx]
