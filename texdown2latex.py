@@ -80,13 +80,13 @@ cite:
 cite_fixme:
 	match	\[\[FIXME\]\]
 	repl	~\\cite{FIXME}
-ref:
-	match	\[([^\[]*)\]
-	repl	\\ref{\1}
 teletype:
 	match	''(.+?)''
 	repl	\\texttt{\1}
 	incl	escape_underscores
+ref:
+	match	\[([^\[]*)\]
+	repl	\\ref{\1}
 italics:
 	match	([^A-Za-z]|^)/([^ ].+?[^ ])/([^A-Za-z]|$)
 	repl	\1\\textit{\2}\3
