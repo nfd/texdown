@@ -277,6 +277,21 @@ class Macros(object):
 		]
 
 		return '\n'.join(result)
+
+	def macro_absolutegraphic(self, args):
+		"""
+		Includes an absolutely-positioned graphic without label.
+		"""
+		filename, left, top, height= \
+			[arg.strip() for arg in args.split(',')]
+		result = [
+			r'\begin{picture}(0.0, 0.0)',
+			r'	\put(%s,%s) {' % (left, top),
+			r'		\includegraphics[height=%s]{figures/%s}' % (height, filename),
+			r'	}',
+			r'\end{picture}',
+		]
+		return '\n'.join(result)
 	
 	def macro_floatcode(self, block_lines, placement_spec = None):
 		"""
