@@ -34,7 +34,7 @@ block_cmd:
 	func	block_cmd
 	incl	caption
 startline:
-	match	^!!([^ ]*) (.*?)$
+	match	^!!([^ ]*?)(?: (.*?))?$
 	func	startline_cmd
 bullets:
 	match	^( +)\*(.*?)\n
