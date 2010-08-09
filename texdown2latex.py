@@ -51,6 +51,10 @@ description:
 mathmode:
 	match	\$(.*?)\$
 	repl	$\1$
+chapterstar:
+	match	^##\*(.*)##
+	repl	\\chapter*{\1}
+	incl	label
 chapter:
 	match	^##(.*)##
 	repl	\\chapter{\1}
