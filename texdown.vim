@@ -7,6 +7,7 @@ syn match texdowncaption /\~\~ [^\~]* \~\~/ contains=texdownlabel
 syn match texdownlabel /<<[^<]*>>/
 syn match texdownfixme /FIXME:.*$/ contained
 syn match texdowncite /\[\[[^\[]*\]\]/
+syn match texdownurl /((.*))/
 syn match texdowncitefixme /\[\[FIXME\]\]/
 syn match texdownref /\[[^\[]*\]/
 syn match texdownitalics /\/[^ ][^\/]*[^ ]\//
@@ -30,6 +31,7 @@ hi TexdownMilderHeading guifg=DarkBlue
 hi texdowncaption guifg=orange
 hi texdownfixme guifg=red guibg=yellow
 hi texdowncite guifg=darkorange
+hi texdownurl guifg=purple
 hi texdowncitefixme guifg=red guibg=yellow
 hi texdownref guifg=darkgreen
 hi texdownitalics gui=italic
