@@ -78,6 +78,9 @@ caption:
 	match	\~\~ ([^\~]*) \~\~
 	repl	\\caption{\1}
 	incl	label cite
+url:
+	match	\(\((.*?)\)\)
+	repl	\\url{\1}
 cite:
 	match	 *\[\[([^\[]*)\]\]
 	repl	~\\cite{\1}
