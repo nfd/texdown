@@ -278,6 +278,12 @@ class Macros(object):
 
 		return '\n'.join(result)
 
+	def macro_floatgraphic_wholepage(self, args):
+		result = [self.macro_floatgraphic(args),
+				'\\afterpage{\\clearpage}']
+		return '\n'.join(result)
+	
+
 	def macro_absolutegraphic(self, args):
 		"""
 		Includes an absolutely-positioned graphic without label.
