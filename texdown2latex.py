@@ -41,7 +41,7 @@ bullets:
 	func	bullets
 	incl	escape_percents teletype quotes bold italics cite ref escape_underscores
 numbers:
-	match	^( +)[0-9]+\.(.*?)\n
+	match	^( +)([0-9]+)\.(.*?)\n
 	func	numbers
 	incl	escape_percents teletype quotes bold italics cite ref escape_underscores
 description:
@@ -147,6 +147,8 @@ class Converter(object):
 
 		self.register_macros(self)
 		self.register_macros(localmacros.Macros(self.convert))
+
+		self.enum_depth = 0 # Keep track, so we can set the counter in \enumerate
 
 		self.latex = self.convert(texdown, magic = True)
 	
@@ -284,11 +286,17 @@ class Converter(object):
 	def macro_numbers(self, match, open_start, open_end):
 		result = []
 
+		enum_number = int(match.group(2))
 		if open_start:
 			result.append('\\begin{enumerate}\n')
-		result.append('\t\\item %s\n' % match.group(2))
+			self.enum_depth += 1
+			if enum_number != 1:
+				varname = 'enum' + 'i' * self.enum_depth
+				result.append('\\setcounter{%s}{%d}\n' % (varname, enum_number - 1))
+		result.append('\t\\item %s\n' % match.group(3))
 		if open_end:
 			result.append('\\end{enumerate}\n')
+			self.enum_depth -= 1
 
 		return ''.join(result)
 
