@@ -83,7 +83,7 @@ url:
 	repl	\\url{\1}
 cite:
 	match	 *\[\[([^\[]*)\]\]
-	repl	~\\cite{\1}
+	repl	~\\citep{\1}
 cite_fixme:
 	match	\[\[FIXME\]\]
 	repl	~\\cite{FIXME}
