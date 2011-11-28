@@ -20,6 +20,7 @@ immediately preceded or succeeded by another match of the same type.
 """
 import re
 import sys
+import macros as builtinmacros
 # Attempt to import 'localmacros' from cwd preferentially.
 sys.path.insert(0, '.')
 import localmacros
@@ -56,19 +57,23 @@ chapterstar:
 	repl	\\chapter*{\1}
 	incl	label
 chapter:
-	match	^##(.*)##
+	match	^## *(.*) *##
 	repl	\\chapter{\1}
 	incl	label
 section:
-	match	^==(.*)==
+	match	^== *(.*) *==
 	repl	\\section{\1}
 	incl	label escape_underscores escape_percents teletype
+usenixabstract:
+	match	^\^ *(.*) *\^
+	repl	\\subsection*{\1}
+	incl	label escape_underscores escape_percents teletype
 subsection:
-	match	^=(.*)=
+	match	^= *(.*) *=
 	repl	\\subsection{\1}
 	incl	label escape_underscores escape_percents teletype
 subsubsection:
-	match	^-(.*)-
+	match	^- *(.*) *-
 	repl	\\subsubsection{\1}
 	incl	label escape_underscores escape_percents teletype
 label:
@@ -146,7 +151,8 @@ class Converter(object):
 		self.macros = {}
 
 		self.register_macros(self)
-		self.register_macros(localmacros.Macros(self.convert))
+		self.register_macros(builtinmacros.Macros(self))
+		self.register_macros(localmacros.Macros(self))
 
 		self.enum_depth = 0 # Keep track, so we can set the counter in \enumerate
 
@@ -157,13 +163,17 @@ class Converter(object):
 			if key.startswith('macro_'):
 				self.macros[key[6:]] = getattr(obj, key)
 
-	def convert(self, texdown, magic = False):
+	def convert(self, texdown, magic = False, fragment = False):
 		"""
 		Conversion:
 			Text is list of (chunk, names of conversions for this chunk),
 			conceptually. Do a depth-first conversion and join up a
 			complete text block in reality.
 		"""
+		if fragment:
+			# Hack to ensure that ^ and $ don't match anything important.
+			texdown = ' ' + texdown + ' '
+
 		texdown = self.do_convert(texdown, CONVERSIONS_ORDER)
 		#for match, replacement in CONVERSIONS:
 		#	texdown = self.convert_one(texdown, match, replacement)
@@ -173,14 +183,18 @@ class Converter(object):
 			texdown += self.macros['end_document'](None)
 
 			# Hack: magical abstract conversion.
-			abstract_start = texdown.find('\section{ Abstract }')
-			if abstract_start != -1:
-				abstract_end = texdown.find('\section', abstract_start + 1)
-				texdown = texdown[:abstract_start] \
-					+ '\\begin{abstract}\n' \
-					+ texdown[abstract_start + 20: abstract_end] \
-					+ '\\end{abstract}\n' \
-					+ texdown[abstract_end:]
+			if 0:
+				abstract_start = texdown.find('\section{ Abstract }')
+				if abstract_start != -1:
+					abstract_end = texdown.find('\section', abstract_start + 1)
+					texdown = texdown[:abstract_start] \
+						+ '\\begin{abstract}\n' \
+						+ texdown[abstract_start + 20: abstract_end] \
+						+ '\\end{abstract}\n' \
+						+ texdown[abstract_end:]
+
+		if fragment:
+			texdown = texdown[1:-1]
 
 		return texdown
 	
@@ -194,7 +208,7 @@ class Converter(object):
 		children = match_names[1:]
 		conv = CONVERSIONS[match_name]
 
-		for pre_match, match in self.convert_one(text, conv):
+		for pre_match, match in self.convert_one(text, match_name, conv):
 			if children:
 				pre_match = self.do_convert(pre_match, children)
 			if 'incl' in conv:
@@ -205,7 +219,7 @@ class Converter(object):
 		return ''.join(result)
 			
 
-	def convert_one(self, texdown, conv):
+	def convert_one(self, texdown, match_name, conv):
 		match = conv['match']
 
 		matches = list(match.finditer(texdown))
@@ -264,6 +278,11 @@ class Converter(object):
 				result = match.expand(conv['repl'])
 			else:
 				raise NotImplementedError()
+
+			# If there is a post-processing handler, call it here.
+			postprocess_handler = self.macros.get('postproc_%s' % (match_name))
+			if postprocess_handler:
+				result = postprocess_handler(result)
 
 			yield before_match, result
 
@@ -342,6 +361,294 @@ class Converter(object):
 		except KeyError:
 			raise ConversionError("Macro '%s' not found." % (command))
 		return handler(args)
+
+	# Functions to make available to macros.py and localmacros.py.
+	def separate_tabs(self, line):
+		return re.split(r'\t+', line)
+
+	def make_author(self, name, email, affiliation):
+		all_info = [name]
+		if email:
+			all_info.append(r"\\" + "\n\t\t%s" % (email))
+		if affiliation:
+			all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+		return r"	\authorinfo{%s}" % (''.join(all_info))+ "\n" 
+
+	def make_author_plain(self, name, email, affiliation):
+		all_info = [name]
+		if email:
+			all_info.append(r"\\" + "\n\t\t%s" % (email))
+		if affiliation:
+			all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+		return r"	\author{%s}" % (''.join(all_info))+ "\n" 
+
+	def anypaper(self, block_lines):
+		info = {'AUTHORS': '?authors',
+			'conference': ('?conf', '?conf'), 
+			'copyrightyear': '?year',
+			'title': '?title'}
+
+		authors = []
+
+		for line in block_lines:
+			line = self.texdown.separate_tabs(line)
+			key = line.pop(0)
+
+			if key == 'author':
+				author_name = line[0]
+				if len(line) >= 2:
+					author_email = line[1]
+				else:
+					author_email = None
+				if len(line) >= 3:
+					if line[2].startswith('"'):
+						# Directly-written affiliation
+						assert line[2].endswith('"')
+						author_affil = line[2][1:-1]
+					else:
+						author_affil = AFFILIATIONS[line[2]]
+				else:
+					author_affil = None
+				authors.append(self.author(author_name, author_email, author_affil))
+			else:
+				for idx in range(len(line)):
+					info[key + str(idx)] = line[idx]
+
+		if authors:
+			info['AUTHORS'] = '\n'.join(authors)
+		return info
+
+	# Popular stuff from localmacros.py
+	def fancy_table(self, block_lines, check_for_sizes = False, make_float = True, cell_func = None, horizborders = None, vertborders = None):
+		"""
+		Produces a table containing data. Numbers must be tab separated. EG:
+			X	Y	!!numericresults
+			37	1
+			38	2
+		"""
+
+		if block_lines[-1].startswith('~~'):
+			caption = block_lines.pop()
+		else:
+			caption = None
+		result = []
+		if make_float:
+			result.append('\\begin{table}\n')
+
+		block_lines = [self.separate_tabs(line) for line in block_lines]
+		cols = len(block_lines[0])
+
+		if cell_func:
+			for rownum in range(len(block_lines)):
+				line = block_lines[rownum]
+				for colnum in range(len(line)):
+					line[colnum] = cell_func(rownum, colnum, line[colnum])
+				block_lines[rownum] = line
+
+
+		latex_sizes = ['l'] * cols # The default
+
+		if check_for_sizes:
+			# The first row may contain size information of the form !\d+%. If
+			# it does, use 'p' rather than 'l' to lay out the table, and base
+			# the overall size on the known page width.
+			all_sizes_percent = [-1] * cols
+			found_one = False
+			for col_num, element in enumerate(block_lines[0]):
+				matcher = re.match(r'.*!([0-9]+)%$', element)
+				if matcher:
+					found_one = True
+					all_sizes_percent[col_num] = int(matcher.group(1))
+					block_lines[0][col_num] = element[:element.rfind('!')]
+
+			if found_one:
+				# Assign any missing numbers
+				perc_left = 100
+				for col_num in range(cols):
+					if all_sizes_percent[col_num] == -1:
+						all_sizes_percent[col_num] = perc_left
+					else:
+						perc_left -= all_sizes_percent[col_num]
+
+				# Convert to mm
+				all_sizes_mm = [(self.page_width_mm * col_size) / 100 \
+						for col_size \
+						in all_sizes_percent]
+				latex_sizes = ['p{%dmm}' % (size_mm) for size_mm in all_sizes_mm]
+
+		# Check for magical alignment of columns.
+		# Left-alignment (the default): cells neither start nor end with a space.
+		# Right-alignment: At least one cell starts with a space; no cell ends with one.
+		# Centered alignment: At least one cell both starts and ends with a space.
+		# at least one entry with a space.
+		for col_num in range(cols):
+			align = latex_sizes[col_num]
+			if len(align) == 1 and align in 'lcr':
+				for line in block_lines:
+					cell = line[col_num]
+					if cell.startswith(' ') and align == 'l':
+						align = 'r'
+					if cell.endswith(' '):
+						align = 'c'
+				latex_sizes[col_num] = align
+
+
+		# Borders
+		if horizborders:
+			if horizborders[1] == '|':
+				latex_sizes = [item for sublist in zip(latex_sizes, ['|'] * len(latex_sizes))
+						for item in sublist][:-1]
+			if horizborders[0] == '|':
+				latex_sizes.insert(0, '|')
+			if horizborders[2] == '|':
+				latex_sizes.append('|')
+
+		# Start output
+		latex_sizecmd = ''.join(latex_sizes)
+		result.append('	\\begin{tabular}{%s}\n' % latex_sizecmd)
+
+
+		if vertborders and vertborders[0] == '-':
+			result.append('\\hline\n')
+
+		count = 0
+		for line in block_lines:
+			if vertborders and vertborders[1] == '-' and count > 0:
+				result.append('\\hline\n')
+			if vertborders and vertborders[1] == 't' and count == 1:
+				result.append('\\hline\n')
+			elements = [self.convert(element) for element in line]
+
+			result.append('\t')
+
+			result.append(' & '.join(elements))
+
+			result.append(r'\\' + '\n')
+			count += 1
+
+		if vertborders and vertborders[2] == '-':
+			result.append('\\hline\n')
+
+		result.append('	\\end{tabular}\n')
+		if caption:
+			result.append(caption)
+		if make_float:
+			result.append('\\end{table}\n')
+		return ''.join(result)
+
+	def macro_floatgraphic(self, args):
+		"""
+		Includes a graphic, places it in a figure, and gives it a label. Usage:
+		!!floatgraphic filename, Caption goes here
+		"""
+		return self.macro_anygraphic(args, floating = True)
+
+	def macro_inlinegraphic(self, args):
+		return self.macro_anygraphic(args, floating = False)
+
+	def macro_anygraphic(self, args, floating = True, centered = False, floatspec = None, extra = ""):
+		if ',' in args:
+			filename, caption = args.split(',', 1)
+			caption = caption.strip()
+		else:
+			filename = args
+			caption = None
+
+		label = filename
+		if '/' in label:
+			label = label.split('/')[-1]
+		if '#' in label:
+			filename = filename.split('#')[0]
+			label = label.replace('#', '.')
+		label = label.replace('-', '.')
+
+		if floatspec is None:
+			floatspec = '[htb]'
+
+		result = []
+
+		if floating:
+			result.append('\\begin{figure}%s' % (floatspec))
+
+		if centered:
+			result.append('\\begin{center}')
+
+		result.append('\\includegraphics%s{figures/%s}' % (extra, filename))
+	
+		if centered:
+			result.append('		\\end{center}')
+
+		if floating:
+			result.append('	\\caption{\\label{figure.%s}%s}' % (label, caption))
+			result.append('\\end{figure}')
+
+		else:
+			result.append('\\captionof{figure}{%s}' % (caption))
+		return '\n'.join(result)
+
+	def macro_floatgraphic_wholepage(self, args):
+		result = [self.macro_floatgraphic(args),
+				'\\afterpage{\\clearpage}']
+		return '\n'.join(result)
+	
+
+	def macro_absolutegraphic(self, args):
+		"""
+		Includes an absolutely-positioned graphic without label.
+		"""
+		filename, left, top, height= \
+			[arg.strip() for arg in args.split(',')]
+		result = [
+			r'\begin{picture}(0.0, 0.0)',
+			r'	\put(%s,%s) {' % (left, top),
+			r'		\includegraphics[height=%s]{figures/%s}' % (height, filename),
+			r'	}',
+			r'\end{picture}',
+		]
+		return '\n'.join(result)
+	
+	def macro_floatcode(self, block_lines, placement_spec = None):
+		"""
+		Code inside a figure. If the final line is a caption, does the right
+		thing. Usage:
+			code line 1	!!floatcode
+			final code line
+			~~ <<label.if.wanted>> Caption if wanted ~~
+		"""
+		if placement_spec is None:
+			placement_spec = 'htb'
+
+		caption = None
+		if block_lines[-1].startswith('~~'):
+			caption = block_lines.pop()
+		block_lines = [line.replace('\t', '  ') for line in block_lines]
+		result = ['\\begin{figure}[%s]' % (placement_spec)]
+		result.append('\\begin{verbatim}')
+		result.extend(block_lines)
+		result.append('\\end{verbatim}')
+		if caption:
+			result.append(caption)
+		result.append('\\end{figure}')
+		return '\n'.join(result)
+	
+	def macro_exactfloatcode(self, block_lines):
+		return self.macro_floatcode(block_lines, 'h!')
+	
+	def macro_floattable(self, block_lines):
+		return self.fancy_table(block_lines, check_for_sizes = True)
+	
+	def macro_inlinetable(self, block_lines):
+		return self.fancy_table(block_lines, check_for_sizes = True, make_float = False)
+	
+	def macro_blockquote(self, block_lines):
+		# Special-case attribution line.
+		if block_lines[-1].startswith('--'):
+			block_lines[-1] = r'\begin{flushright} --' +\
+				self.convert(block_lines[-1][2:]) +\
+				r'\end{flushright}'
+		result = [r'\begin{quote}'] + block_lines + [r'\end{quote}']
+		return '\n'.join(result) + '\n'
+
 	
 if __name__ == '__main__':
 	handle = codecs.open(sys.argv[1], 'r', encoding = 'utf-8')
