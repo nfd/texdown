@@ -11,11 +11,7 @@ Texdown is yet another /layer of abstraction/ over typing raw PostScript command
 
 == Syntax examples ==
 
-*This is bold*.
-
-/This is italicised./
-
-''This is mono-spaced''.
+*This is bold*.  /This is italicised./ ''This is mono-spaced''.
 
  * Milk
  * Eggs

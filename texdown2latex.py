@@ -376,21 +376,41 @@ class Converter(object):
 	def separate_tabs(self, line):
 		return re.split(r'\t+', line)
 
-	def make_author(self, name, email, affiliation):
-		all_info = [name]
-		if email:
-			all_info.append(r"\\" + "\n\t\t%s" % (email))
-		if affiliation:
-			all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-		return r"	\authorinfo{%s}" % (''.join(all_info))+ "\n" 
+	def make_author(self, authorlist):
+		authors = []
+		for name, email, affiliation in authorlist:
+			all_info = [name]
+			if email:
+				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			if affiliation:
+				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+			authors.append(r"	\authorinfo{%s}" % (''.join(all_info))+ "\n")
+		return ''.join(authors)
 
-	def make_author_plain(self, name, email, affiliation):
-		all_info = [name]
-		if email:
-			all_info.append(r"\\" + "\n\t\t%s" % (email))
-		if affiliation:
-			all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-		return r"	\author{%s}" % (''.join(all_info))+ "\n" 
+	def make_author_plain(self, authorlist):
+		authors = []
+		for name, email, affiliation in authorlist:
+			all_info = [name]
+			if email:
+				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			if affiliation:
+				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+			authors.append(r"	\author{%s}" % (''.join(all_info))+ "\n")
+		return ''.join(authors)
+
+	def make_author_joined(self, authorlist):
+		authors = []
+		for name, email, affiliation in authorlist:
+			all_info = [name]
+			if email:
+				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			if affiliation:
+				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+			authors.append(''.join(all_info)+ "\n")
+		if authors:
+			return r"	\author{" + '\\and\n	'.join(authors) + "}"
+		else:
+			return ''
 
 	def anypaper(self, block_lines, author = None):
 		info = {'AUTHORS': '?authors',
@@ -420,13 +440,13 @@ class Converter(object):
 						author_affil = AFFILIATIONS[line[2]]
 				else:
 					author_affil = None
-				authors.append(author(author_name, author_email, author_affil))
+				authors.append((author_name, author_email, author_affil))
 			else:
 				for idx in range(len(line)):
 					info[key + str(idx)] = line[idx]
 
 		if authors:
-			info['AUTHORS'] = '\n'.join(authors)
+			info['AUTHORS'] = author(authors)
 		else:
 			info['AUTHORS'] = ''
 		return info

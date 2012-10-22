@@ -40,6 +40,7 @@ TECHREPORT = r"""\documentclass[preprint,natbib,10pt]{article}
 \usepackage{amsmath}
 \usepackage[pdfborder={0 0 0}]{hyperref}
 \usepackage{caption}
+\usepackage{natbib}
 
 \makeatletter 
 \g@addto@macro\@verbatim\small 
@@ -96,7 +97,7 @@ class Macros(object):
 
 	def macro_techreport(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
-		return TECHREPORT % self.texdown.anypaper(block_lines, author = self.texdown.make_author_plain)
+		return TECHREPORT % self.texdown.anypaper(block_lines, author = self.texdown.make_author_joined)
 
 	def macro_acceptancetestingreport(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
