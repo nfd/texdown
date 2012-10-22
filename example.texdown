@@ -1,7 +1,7 @@
 	title			Texdown Demo	!!techreport
 	copyrightyear	2010
-	author			Nicholas FitzRoy-Dale	nicholas@lardcave.net	GEN_AFFIL
-	author			Someone Else			someone@example.com		GEN_AFFIL
+	author			Nicholas FitzRoy-Dale	nicholas@lardcave.net	"University of NSW"
+	author			Someone Else			someone@example.com		"University of somewhere else"
 
 == Abstract ==
 Texdown is a markup language for LaTeX. It probably supports the LaTeX that you use, and can be easily extended.

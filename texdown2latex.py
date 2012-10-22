@@ -416,6 +416,7 @@ class Converter(object):
 						assert line[2].endswith('"')
 						author_affil = line[2][1:-1]
 					else:
+						# FIXME: This has to move somewhere else.
 						author_affil = AFFILIATIONS[line[2]]
 				else:
 					author_affil = None
@@ -684,7 +685,6 @@ def import_local_macros(filenames):
 
 		clses.append(sys.modules[modulename].Macros)
 
-	print clses
 	return clses
 
 if __name__ == '__main__':
