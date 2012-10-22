@@ -92,23 +92,19 @@ class Macros(object):
 
 	def macro_sigplanpaper(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
-		self.author = self.texdown.make_author
-		return SIGPLANPAPER % self.texdown.anypaper(block_lines)
+		return SIGPLANPAPER % self.texdown.anypaper(block_lines, author = self.texdown.make_author)
 
 	def macro_techreport(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
-		self.author = self.texdown.make_author_plain
-		return TECHREPORT % self.texdown.anypaper(block_lines)
+		return TECHREPORT % self.texdown.anypaper(block_lines, author = self.texdown.make_author_plain)
 
 	def macro_acceptancetestingreport(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
-		self.author = self.texdown.make_author_plain
-		return ACCEPTANCE_TESTING_REPORT % self.texdown.anypaper(block_lines)
+		return ACCEPTANCE_TESTING_REPORT % self.texdown.anypaper(block_lines, author = self.texdown.make_author_plain)
 
 	def macro_nictatr(self, block_lines):
 		self.end_document = END_DOCUMENT_PLAIN
-		self.author = self.texdown.make_author_plain
-		return NICTATR % self.texdown.anypaper(block_lines)
+		return NICTATR % self.texdown.anypaper(block_lines, author = self.texdown.make_author_plain)
 
 	def macro_end_document(self, args):
 		return self.end_document

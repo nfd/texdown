@@ -18,12 +18,18 @@ start and end this list. The framework lets them know by passing in flags indica
 whether the block is "open at the start" and "open at the end" -- i.e. if it is
 immediately preceded or succeeded by another match of the same type.
 """
+import os
 import re
 import sys
 import macros as builtinmacros
 # Attempt to import 'localmacros' from cwd preferentially.
 sys.path.insert(0, '.')
-import localmacros
+try:
+	import localmacros
+except ImportError:
+	localmacros = None
+
+from optparse import OptionParser
 
 # Conversions consisting of the regular expression to match, and
 # the replacement text. The replacement may also be a function.
@@ -145,14 +151,18 @@ class ConversionError(Exception):
 	pass
 
 class Converter(object):
-	def __init__(self, texdown):
+	def __init__(self, texdown, macro_classes):
 		self.block_cmd = None
 		self.block_accum = []
 		self.macros = {}
 
 		self.register_macros(self)
 		self.register_macros(builtinmacros.Macros(self))
-		self.register_macros(localmacros.Macros(self))
+		if localmacros is not None:
+			self.register_macros(localmacros.Macros(self))
+
+		for cls in macro_classes:
+			self.register_macros(cls(self))
 
 		self.enum_depth = 0 # Keep track, so we can set the counter in \enumerate
 
@@ -382,7 +392,7 @@ class Converter(object):
 			all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
 		return r"	\author{%s}" % (''.join(all_info))+ "\n" 
 
-	def anypaper(self, block_lines):
+	def anypaper(self, block_lines, author = None):
 		info = {'AUTHORS': '?authors',
 			'conference': ('?conf', '?conf'), 
 			'copyrightyear': '?year',
@@ -391,7 +401,7 @@ class Converter(object):
 		authors = []
 
 		for line in block_lines:
-			line = self.texdown.separate_tabs(line)
+			line = self.separate_tabs(line)
 			key = line.pop(0)
 
 			if key == 'author':
@@ -409,13 +419,15 @@ class Converter(object):
 						author_affil = AFFILIATIONS[line[2]]
 				else:
 					author_affil = None
-				authors.append(self.author(author_name, author_email, author_affil))
+				authors.append(author(author_name, author_email, author_affil))
 			else:
 				for idx in range(len(line)):
 					info[key + str(idx)] = line[idx]
 
 		if authors:
 			info['AUTHORS'] = '\n'.join(authors)
+		else:
+			info['AUTHORS'] = ''
 		return info
 
 	# Popular stuff from localmacros.py
@@ -650,19 +662,52 @@ class Converter(object):
 		return '\n'.join(result) + '\n'
 
 	
+def parse_args():
+	parser = OptionParser()
+	parser.add_option('-m', dest = 'localmacros', default = [], action = 'append')
+	return parser.parse_args() # returns (opts, args)
+
+def import_local_macros(filenames):
+	# Read "filenames", return list of Macros classes.
+
+	clses = []
+
+	for filename in filenames:
+		# Convert the filename to a module name by removing path components and
+		# stripping the extension if present.
+		modulename = filename
+		modulename = os.path.split(modulename)[1]
+		modulename = os.path.splitext(modulename)[0]
+
+		if modulename not in sys.modules:
+			__import__(modulename)
+
+		clses.append(sys.modules[modulename].Macros)
+
+	print clses
+	return clses
+
 if __name__ == '__main__':
-	handle = codecs.open(sys.argv[1], 'r', encoding = 'utf-8')
+	opts, args = parse_args()
+
+	local_macro_clses = import_local_macros(opts.localmacros)
+
+	texdownfile = args[0]
+	
+	handle = codecs.open(texdownfile, 'r', encoding = 'utf-8')
 	data = handle.read()
 	handle.close()
 
 	try:
-		c = Converter(data)
+		c = Converter(data, local_macro_clses)
+
 	except ConversionError, e:
 		print "Error: %s" % (str(e))
 		sys.exit(1)
 
-	if len(sys.argv) == 3:
-		handle = codecs.open(sys.argv[2], 'w', encoding = 'utf-8')
+	if len(args) == 2:
+		outputfile = args[1]
+		handle = codecs.open(outputfile, 'w', encoding = 'utf-8')
 		handle.write(c.latex)
 		handle.close()
 	else:
