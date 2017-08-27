@@ -1,455 +1,168 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # vim: set fileencoding=utf-8 :
-import codecs
-
 """
 Convert Texdown syntax to LaTeX.
-
-Very idiosyncratic. Not very generic.
-
-The idea is to take a file in Texdown format and walk down a list of "conversions".
-Each conversion is a regular expression. For each match of the regular expression,
-a replacement is made. The replacement is either straight text, or a function.
-If the replacer is a function, its return value is a string of replaced text.
-
-Replacements often have a block structure. For example, a bulleted list is simply
-a set of lines beginning with ' *'. Replacement functions need to know when to
-start and end this list. The framework lets them know by passing in flags indicating
-whether the block is "open at the start" and "open at the end" -- i.e. if it is
-immediately preceded or succeeded by another match of the same type.
 """
-import os
-import re
-import sys
-import macros as builtinmacros
-# Attempt to import 'localmacros' from cwd preferentially.
-sys.path.insert(0, '.')
-try:
-	import localmacros
-except ImportError:
-	localmacros = None
 
-from optparse import OptionParser
+import texdown
 
-# Conversions consisting of the regular expression to match, and
-# the replacement text. The replacement may also be a function.
-# Order is important: replacements are performed in the order
-# listed.
+# Basic LaTeX-specific conversions
 CONVERSIONS_TXT = r"""
-block_cmd:
-	match	^\t(.*)$
-	func	block_cmd
-	incl	caption
-startline:
-	match	^!!([^ ]*?)(?: (.*?))?$
-	func	startline_cmd
-bullets:
-	match	^( +)\*(.*?)\n
-	func	bullets
-	incl	escape_percents teletype quotes bold italics cite ref escape_underscores
-numbers:
-	match	^( +)([0-9]+)\.(.*?)\n
-	func	numbers
-	incl	escape_percents teletype quotes bold italics cite ref escape_underscores
-description:
-	match	^ (.+?):(.*)\n
-	func	description
-	incl	italics bold
 mathmode:
-	match	\$(.*?)\$
 	repl	$\1$
 chapterstar:
-	match	^##\*(.*)##
 	repl	\\chapter*{\1}
-	incl	label
 chapter:
-	match	^## *(.*) *##
 	repl	\\chapter{\1}
-	incl	label
 section:
-	match	^== *(.*) *==
 	repl	\\section{\1}
-	incl	label escape_underscores escape_percents teletype
 usenixabstract:
-	match	^\^ *(.*) *\^
 	repl	\\subsection*{\1}
-	incl	label escape_underscores escape_percents teletype
 subsection:
-	match	^= *(.*) *=
 	repl	\\subsection{\1}
-	incl	label escape_underscores escape_percents teletype
 subsubsection:
-	match	^- *(.*) *-
 	repl	\\subsubsection{\1}
-	incl	label escape_underscores escape_percents teletype
 label:
-	match	<<([^<]*)>>
 	repl	\\label{\1}
 caption:
-	match	\~\~ ([^\~]*) \~\~
 	repl	\\caption{\1}
-	incl	label cite
 url:
-	match	\(\((.*?)\)\)
 	repl	\\url{\1}
 cite:
-	match	 *\[\[([^\[]*)\]\]
 	repl	~\\citep{\1}
 cite_fixme:
-	match	\[\[FIXME\]\]
 	repl	~\\cite{FIXME}
 teletype:
-	match	''(.+?)''
 	repl	\\texttt{\1}
-	incl	escape_underscores
 ref:
-	match	\[([^\[]*)\]
 	repl	\\ref{\1}
 italics:
-	match	([^A-Za-z]|^)/([^ ].+?[^ ])/([^A-Za-z]|$)
 	repl	\1\\textit{\2}\3
 bold:
-	match	\*([^\*]+)\*
 	repl	\\textbf{\1}
 subscript:
-	match	__(.*?)__
 	repl	\\subscript{\1}
 quotes:
-	match	"(.+?)"
 	repl	``\1''
-	incl	escape_underscores escape_percents escape_ampersands
 escape_underscores:
-	match	_
 	repl	\_
 escape_percents:
-	match	(?!^)%
 	repl	\%
 escape_ampersands:
-	match	&
 	repl	\&
 """
-CONVERSIONS = {}
-CONVERSIONS_ORDER = []
-hlname = None
-for line in CONVERSIONS_TXT.split('\n'):
-	if not line.strip():
-		continue
 
-	if line.startswith('\t'):
-		key, value = line[1:].split('\t', 1)
-		if key == 'match':
-			value = re.compile(value, re.MULTILINE)
-		elif key == 'incl':
-			value = value.split(' ')
-		CONVERSIONS[hlname][key] = value
-	else:
-		hlname = line[:-1]
-		CONVERSIONS[hlname] = {}
-		CONVERSIONS_ORDER.append(hlname)
+# Large LaTeX macros
+AFFILIATIONS = {
+	'NICTAUNSWThanks': r"""NICTA\thanks{
+      NICTA is funded by the Australian Government as represented by the
+      Department of Broadband, Communications and the Digital Economy
+      and the Australian Research Council through the ICT Centre of
+      Excellence program.
+    } and The University of New South Wales\\
+    Sydney, Australia""",
+	'GEN_AFFIL': r"""Insert Affiliation Here\\
+		City, Country""",
+}
 
-class ConversionError(Exception):
-	pass
+SIGPLANPAPER = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
 
-class Converter(object):
-	def __init__(self, texdown, macro_classes):
-		self.block_cmd = None
-		self.block_accum = []
-		self.macros = {}
+\usepackage{graphicx}
+\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage[pdfborder={0 0 0}]{hyperref}
 
-		self.register_macros(self)
-		self.register_macros(builtinmacros.Macros(self))
-		if localmacros is not None:
-			self.register_macros(localmacros.Macros(self))
+\makeatletter 
+\g@addto@macro\@verbatim\small 
+\makeatother 
 
-		for cls in macro_classes:
-			self.register_macros(cls(self))
+\begin{document}
+  \conferenceinfo{%(conference0)s}{%(conference1)s}
+  \copyrightyear{%(copyrightyear0)s}
+  \title{%(title0)s}
 
-		self.enum_depth = 0 # Keep track, so we can set the counter in \enumerate
+  %(AUTHORS)s
+  \maketitle
+"""
 
-		self.latex = self.convert(texdown, magic = True)
-	
-	def register_macros(self, obj):
-		for key in dir(obj):
-			if key.startswith('macro_'):
-				self.macros[key[6:]] = getattr(obj, key)
+TECHREPORT = r"""\documentclass[preprint,natbib,10pt]{article}
 
-	def convert(self, texdown, magic = False, fragment = False):
-		"""
-		Conversion:
-			Text is list of (chunk, names of conversions for this chunk),
-			conceptually. Do a depth-first conversion and join up a
-			complete text block in reality.
-		"""
-		if fragment:
-			# Hack to ensure that ^ and $ don't match anything important.
-			texdown = ' ' + texdown + ' '
+\usepackage{graphicx}
+\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage[pdfborder={0 0 0}]{hyperref}
+\usepackage{caption}
+\usepackage{natbib}
 
-		texdown = self.do_convert(texdown, CONVERSIONS_ORDER)
-		#for match, replacement in CONVERSIONS:
-		#	texdown = self.convert_one(texdown, match, replacement)
+\makeatletter 
+\g@addto@macro\@verbatim\small 
+\makeatother 
 
-		if magic:
-			# Hack: add document ending here.
-			texdown += self.macros['end_document'](None)
+\begin{document}
+  \title{%(title0)s}
 
-			# Hack: magical abstract conversion.
-			if 0:
-				abstract_start = texdown.find('\section{ Abstract }')
-				if abstract_start != -1:
-					abstract_end = texdown.find('\section', abstract_start + 1)
-					texdown = texdown[:abstract_start] \
-						+ '\\begin{abstract}\n' \
-						+ texdown[abstract_start + 20: abstract_end] \
-						+ '\\end{abstract}\n' \
-						+ texdown[abstract_end:]
+  %(AUTHORS)s
+  \maketitle
+"""
 
-		if fragment:
-			texdown = texdown[1:-1]
+NICTATR = r"""\documentclass[preprint,natbib,10pt]{article}
 
-		return texdown
-	
-	def do_convert(self, text, match_names):
-		"""
-		Walk down the list of names in match_names.
-		"""
-		result = []
+\usepackage{graphicx}
+\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage[pdfborder={0 0 0}]{hyperref}
 
-		match_name = match_names[0]
-		children = match_names[1:]
-		conv = CONVERSIONS[match_name]
+\makeatletter 
+\g@addto@macro\@verbatim\small 
+\makeatother 
 
-		for pre_match, match in self.convert_one(text, match_name, conv):
-			if children:
-				pre_match = self.do_convert(pre_match, children)
-			if 'incl' in conv:
-				match = self.do_convert(match, conv['incl'])
-			result.append(pre_match)
-			result.append(match)
+\begin{document}
+  \title{%(title0)s}
 
-		return ''.join(result)
-			
+	%(AUTHORS)s
+  \maketitle
+"""
 
-	def convert_one(self, texdown, match_name, conv):
-		match = conv['match']
+END_DOCUMENT=r"""
+	\bibliographystyle{plainnat}
+	\bibliography{papers}
+	\end{document}
+"""
 
-		matches = list(match.finditer(texdown))
-		if not matches:
-			yield texdown, ''
+END_DOCUMENT_PLAIN=r"""
+	\bibliographystyle{plain}
+	\bibliography{papers}
+	\end{document}
+"""
 
-		for idx in range(len(matches)):
-			match = matches[idx]
+END_DOCUMENT_NIL = ''
 
-			# Does this match start right after the previous one ends?
-			if idx > 0:
-				prev_end = matches[idx - 1].end()
-				open_start = (match.start() - 1 > prev_end)
-				#print("mid idx open start", open_start)
-				# Store everything between the last result and this one.
-				#result.append(texdown[prev_end:match.start()])
-				before_match = texdown[prev_end:match.start()]
-			else:
-				# At beginning of file: start the block.
-				open_start = True
-				#print("beginning open start", open_start)
-				#print("text", texdown)
-				# Also store everything up to the first match in result.
-				#result.append(texdown[:match.start()])
-				before_match = texdown[:match.start()]
+class Macros(object):
+	def __init__(self, texdown):
+		self.texdown = texdown
+		self.end_document = END_DOCUMENT_NIL
 
-			# Work out if there is a newline after this match and before
-			# the next one.
-			if idx < (len(matches) - 1):
-				next_start = matches[idx + 1].start()
-				open_end = (match.end() +1 < next_start)
-			else:
-				# At end of file: end the block.
-				open_end = True
+	def macro_sigplanpaper(self, block_lines):
+		self.end_document = END_DOCUMENT_PLAIN
+		return SIGPLANPAPER % self.texdown.anypaper(block_lines, author = self.texdown.make_author)
 
-			#print(match, newline_before, newline_after)
+	def macro_techreport(self, block_lines):
+		self.end_document = END_DOCUMENT_PLAIN
+		return TECHREPORT % self.texdown.anypaper(block_lines, author = self.texdown.make_author_joined)
 
-			if 'func' in conv:
-				handler = self.macros[conv['func']]
-				try:
-					co = handler.__code__ # python 3
-				except AttributeError:
-					co = handler.func_code # python 2
-				try:
-					if co.co_argcount == 2:
-						#result.append(handler(match))
-						result = handler(match)
-					else:
-						#result.append(handler(match, open_start, open_end))
-						result = handler(match, open_start, open_end)
-				except:
-					nl_count = texdown[:match.start()].count('\n')
-					print("*** Error while converting line %d:" % (nl_count + 1))
-					raise
-			elif 'repl' in conv:
-				result = match.expand(conv['repl'])
-			else:
-				raise NotImplementedError()
+	def macro_acceptancetestingreport(self, block_lines):
+		self.end_document = END_DOCUMENT_PLAIN
+		return ACCEPTANCE_TESTING_REPORT % self.texdown.anypaper(block_lines, author = self.texdown.make_author_plain)
 
-			# If there is a post-processing handler, call it here.
-			postprocess_handler = self.macros.get('postproc_%s' % (match_name))
-			if postprocess_handler:
-				result = postprocess_handler(result)
+	def macro_nictatr(self, block_lines):
+		self.end_document = END_DOCUMENT_PLAIN
+		return NICTATR % self.texdown.anypaper(block_lines, author = self.texdown.make_author_plain)
 
-			yield before_match, result
-
-		if matches:
-			# Store everything after the last match
-			#result.append(texdown[matches[-1].end():])
-			yield texdown[matches[-1].end():], ''
-	
-	def macro_bullets(self, match, open_start, open_end):
-		result = []
-
-		if open_start:
-			result.append('\\begin{itemize}\n')
-		result.append('\t\\item %s\n' % match.group(2))
-		if open_end:
-			result.append('\\end{itemize}\n')
-
-		return ''.join(result)
-	
-	def macro_numbers(self, match, open_start, open_end):
-		result = []
-
-		enum_number = int(match.group(2))
-		if open_start:
-			result.append('\\begin{enumerate}\n')
-			self.enum_depth += 1
-			if enum_number != 1:
-				varname = 'enum' + 'i' * self.enum_depth
-				result.append('\\setcounter{%s}{%d}\n' % (varname, enum_number - 1))
-		result.append('\t\\item %s\n' % match.group(3))
-		if open_end:
-			result.append('\\end{enumerate}\n')
-			self.enum_depth -= 1
-
-		return ''.join(result)
-
-	
-	def macro_description(self, match, open_start, open_end):
-		result = []
-
-		if open_start:
-			result.append('\\begin{description}\n')
-		key, value = self.convert(match.group(1)), self.convert(match.group(2))
-		result.append('\t\\item[%s:] %s\n' % (key, value))
-		if open_end:
-			result.append('\\end{description}\n')
-
-		return ''.join(result)
-	
-	def macro_block_cmd(self, match, open_start, open_end):
-		# A block command ends with \t!!(.*) on its first line. This 
-		# determines the real block handler.
-		line = match.group(1)
-		if open_start:
-			# Expect a block command.
-			if '\t!!' not in line:
-				raise ConversionError("Block does not end with \\t!!macroname")
-			line, self.block_cmd = line.rsplit('\t!!', 1)
-		if line.strip():
-			self.block_accum.append(line)
-		if open_end:
-			handler = self.macros[self.block_cmd]
-			result = handler(self.block_accum)
-			self.block_accum = []
-			self.block_cmd = None
-			return result
-		else:
-			return ''
-
-	def macro_startline_cmd(self, match):
-		command = match.group(1)
-		args = match.group(2)
-
-		try:
-			handler = self.macros[command]
-		except KeyError:
-			raise ConversionError("Macro '%s' not found." % (command))
-		return handler(args)
-
-	# Functions to make available to macros.py and localmacros.py.
-	def separate_tabs(self, line):
-		return re.split(r'\t+', line)
-
-	def make_author(self, authorlist):
-		authors = []
-		for name, email, affiliation in authorlist:
-			all_info = [name]
-			if email:
-				all_info.append(r"\\" + "\n\t\t%s" % (email))
-			if affiliation:
-				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-			authors.append(r"	\authorinfo{%s}" % (''.join(all_info))+ "\n")
-		return ''.join(authors)
-
-	def make_author_plain(self, authorlist):
-		authors = []
-		for name, email, affiliation in authorlist:
-			all_info = [name]
-			if email:
-				all_info.append(r"\\" + "\n\t\t%s" % (email))
-			if affiliation:
-				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-			authors.append(r"	\author{%s}" % (''.join(all_info))+ "\n")
-		return ''.join(authors)
-
-	def make_author_joined(self, authorlist):
-		authors = []
-		for name, email, affiliation in authorlist:
-			all_info = [name]
-			if email:
-				all_info.append(r"\\" + "\n\t\t%s" % (email))
-			if affiliation:
-				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-			authors.append(''.join(all_info)+ "\n")
-		if authors:
-			return r"	\author{" + '\\and\n	'.join(authors) + "}"
-		else:
-			return ''
-
-	def anypaper(self, block_lines, author = None):
-		info = {'AUTHORS': '?authors',
-			'conference': ('?conf', '?conf'), 
-			'copyrightyear': '?year',
-			'title': '?title'}
-
-		authors = []
-
-		for line in block_lines:
-			line = self.separate_tabs(line)
-			key = line.pop(0)
-
-			if key == 'author':
-				author_name = line[0]
-				if len(line) >= 2:
-					author_email = line[1]
-				else:
-					author_email = None
-				if len(line) >= 3:
-					if line[2].startswith('"'):
-						# Directly-written affiliation
-						assert line[2].endswith('"')
-						author_affil = line[2][1:-1]
-					else:
-						# FIXME: This has to move somewhere else.
-						author_affil = AFFILIATIONS[line[2]]
-				else:
-					author_affil = None
-				authors.append((author_name, author_email, author_affil))
-			else:
-				for idx in range(len(line)):
-					info[key + str(idx)] = line[idx]
-
-		if authors:
-			info['AUTHORS'] = author(authors)
-		else:
-			info['AUTHORS'] = ''
-		return info
+	def macro_end_document(self, args):
+		return self.end_document
 
 	# Popular stuff from localmacros.py
 	def fancy_table(self, block_lines, check_for_sizes = False, make_float = True, cell_func = None, horizborders = None, vertborders = None):
@@ -682,54 +395,127 @@ class Converter(object):
 		result = [r'\begin{quote}'] + block_lines + [r'\end{quote}']
 		return '\n'.join(result) + '\n'
 
+	def macro_bullets(self, match, open_start, open_end):
+		result = []
+
+		if open_start:
+			result.append('\\begin{itemize}\n')
+		result.append('\t\\item %s\n' % match.group(2))
+		if open_end:
+			result.append('\\end{itemize}\n')
+
+		return ''.join(result)
 	
-def parse_args():
-	parser = OptionParser()
-	parser.add_option('-m', dest = 'localmacros', default = [], action = 'append')
-	return parser.parse_args() # returns (opts, args)
+	def macro_numbers(self, match, open_start, open_end):
+		result = []
 
-def import_local_macros(filenames):
-	# Read "filenames", return list of Macros classes.
+		enum_number = int(match.group(2))
+		if open_start:
+			result.append('\\begin{enumerate}\n')
+			self.enum_depth += 1
+			if enum_number != 1:
+				varname = 'enum' + 'i' * self.enum_depth
+				result.append('\\setcounter{%s}{%d}\n' % (varname, enum_number - 1))
+		result.append('\t\\item %s\n' % match.group(3))
+		if open_end:
+			result.append('\\end{enumerate}\n')
+			self.enum_depth -= 1
 
-	clses = []
+		return ''.join(result)
 
-	for filename in filenames:
-		# Convert the filename to a module name by removing path components and
-		# stripping the extension if present.
-		modulename = filename
-		modulename = os.path.split(modulename)[1]
-		modulename = os.path.splitext(modulename)[0]
+	
+	def macro_description(self, match, open_start, open_end):
+		result = []
 
-		if modulename not in sys.modules:
-			__import__(modulename)
+		if open_start:
+			result.append('\\begin{description}\n')
+		key, value = self.convert(match.group(1)), self.convert(match.group(2))
+		result.append('\t\\item[%s:] %s\n' % (key, value))
+		if open_end:
+			result.append('\\end{description}\n')
 
-		clses.append(sys.modules[modulename].Macros)
+		return ''.join(result)
 
-	return clses
+	def separate_tabs(self, line):
+		return re.split(r'\t+', line)
+
+	def make_author(self, authorlist):
+		authors = []
+		for name, email, affiliation in authorlist:
+			all_info = [name]
+			if email:
+				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			if affiliation:
+				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+			authors.append(r"	\authorinfo{%s}" % (''.join(all_info))+ "\n")
+		return ''.join(authors)
+
+	def make_author_plain(self, authorlist):
+		authors = []
+		for name, email, affiliation in authorlist:
+			all_info = [name]
+			if email:
+				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			if affiliation:
+				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+			authors.append(r"	\author{%s}" % (''.join(all_info))+ "\n")
+		return ''.join(authors)
+
+	def make_author_joined(self, authorlist):
+		authors = []
+		for name, email, affiliation in authorlist:
+			all_info = [name]
+			if email:
+				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			if affiliation:
+				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
+			authors.append(''.join(all_info)+ "\n")
+		if authors:
+			return r"	\author{" + '\\and\n	'.join(authors) + "}"
+		else:
+			return ''
+
+	def anypaper(self, block_lines, author = None):
+		info = {'AUTHORS': '?authors',
+			'conference': ('?conf', '?conf'), 
+			'copyrightyear': '?year',
+			'title': '?title'}
+
+		authors = []
+
+		for line in block_lines:
+			line = self.separate_tabs(line)
+			key = line.pop(0)
+
+			if key == 'author':
+				author_name = line[0]
+				if len(line) >= 2:
+					author_email = line[1]
+				else:
+					author_email = None
+				if len(line) >= 3:
+					if line[2].startswith('"'):
+						# Directly-written affiliation
+						assert line[2].endswith('"')
+						author_affil = line[2][1:-1]
+					else:
+						# FIXME: This has to move somewhere else.
+						author_affil = AFFILIATIONS[line[2]]
+				else:
+					author_affil = None
+				authors.append((author_name, author_email, author_affil))
+			else:
+				for idx in range(len(line)):
+					info[key + str(idx)] = line[idx]
+
+		if authors:
+			info['AUTHORS'] = author(authors)
+		else:
+			info['AUTHORS'] = ''
+		return info
+
+	
 
 if __name__ == '__main__':
-	opts, args = parse_args()
-
-	local_macro_clses = import_local_macros(opts.localmacros)
-
-	texdownfile = args[0]
-	
-	handle = codecs.open(texdownfile, 'r', encoding = 'utf-8')
-	data = handle.read()
-	handle.close()
-
-	try:
-		c = Converter(data, local_macro_clses)
-
-	except ConversionError as e:
-		print("Error: %s" % (e,))
-		sys.exit(1)
-
-	if len(args) == 2:
-		outputfile = args[1]
-		handle = codecs.open(outputfile, 'w', encoding = 'utf-8')
-		handle.write(c.latex)
-		handle.close()
-	else:
-		sys.stdout.write(c.latex)
+	texdown.run_specialised_converter('latex', CONVERSIONS_TXT, Macros)
 
