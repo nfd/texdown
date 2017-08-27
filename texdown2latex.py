@@ -721,8 +721,8 @@ if __name__ == '__main__':
 	try:
 		c = Converter(data, local_macro_clses)
 
-	except ConversionError, e:
-		print "Error: %s" % (str(e))
+	except ConversionError as e:
+		print("Error: %s" % (e,))
 		sys.exit(1)
 
 	if len(args) == 2:
