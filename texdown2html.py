@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 # vim: set fileencoding=utf-8 :
 """
-Convert Texdown syntax to LaTeX.
+Convert Texdown syntax to HTML.
 """
 
 import texdown
 import re
 
-# Basic LaTeX-specific conversions
+# Basic HTML-specific conversions
 CONVERSIONS_TXT = r"""
-mathmode:
-	repl	$\1$
+#mathmode:
+#	repl	$\1$
 chapterstar:
-	repl	\\chapter*{\1}
+	repl	<h1>\1</h1>
 chapter:
-	repl	\\chapter{\1}
+	repl	<h1>\1</h1>
 section:
-	repl	\\section{\1}
+	repl	<h2>\1</h2>
 usenixabstract:
-	repl	\\subsection*{\1}
+	repl	<h3>\1</h3>
 subsection:
-	repl	\\subsection{\1}
+	repl	<h3>\1</h3>
 subsubsection:
-	repl	\\subsubsection{\1}
+	repl	<h4>\1</h4>
 label:
 	repl	\\label{\1}
 caption:
 	repl	\\caption{\1}
 url:
-	repl	\\url{\1}
+	repl	<a href="\1">\1</a>
 cite:
 	repl	~\\citep{\1}
 cite_fixme:
@@ -38,19 +38,22 @@ teletype:
 ref:
 	repl	\\ref{\1}
 italics:
-	repl	\1\\textit{\2}\3
+	repl	\1<i>\2</i>\3
 bold:
-	repl	\\textbf{\1}
+	repl	<b>\1</b>
 subscript:
-	repl	\\subscript{\1}
+	repl	<sub>\1</sub>
 quotes:
-	repl	``\1''
+	repl	"\1"
 escape_underscores:
-	repl	\_
+	repl	_
 escape_percents:
-	repl	\%
+	repl	%
 escape_ampersands:
-	repl	\&
+	repl	&
+escape_leftbracket
+	match	<
+	repl	&lt;
 """
 
 # Large LaTeX macros
@@ -66,77 +69,20 @@ AFFILIATIONS = {
 		City, Country""",
 }
 
-SIGPLANPAPER = r"""\documentclass[preprint,natbib,10pt]{sigplanconf}
+TECHREPORT = r"""
+<html>
+<head>
+<title>%(title0)s</title>
+<body>
 
-\usepackage{graphicx}
-\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
-\usepackage{url}
-\usepackage{amsmath}
-\usepackage[pdfborder={0 0 0}]{hyperref}
+<h1>%(title0)s</h1>
+%(AUTHORS)s
 
-\makeatletter 
-\g@addto@macro\@verbatim\small 
-\makeatother 
-
-\begin{document}
-  \conferenceinfo{%(conference0)s}{%(conference1)s}
-  \copyrightyear{%(copyrightyear0)s}
-  \title{%(title0)s}
-
-  %(AUTHORS)s
-  \maketitle
-"""
-
-TECHREPORT = r"""\documentclass[preprint,natbib,10pt]{article}
-
-\usepackage{graphicx}
-\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
-\usepackage{url}
-\usepackage{amsmath}
-\usepackage[pdfborder={0 0 0}]{hyperref}
-\usepackage{caption}
-\usepackage{natbib}
-
-\makeatletter 
-\g@addto@macro\@verbatim\small 
-\makeatother 
-
-\begin{document}
-  \title{%(title0)s}
-
-  %(AUTHORS)s
-  \maketitle
-"""
-
-NICTATR = r"""\documentclass[preprint,natbib,10pt]{article}
-
-\usepackage{graphicx}
-\setkeys{Gin}{keepaspectratio=true,clip=true,draft=false,width=\linewidth}
-\usepackage{url}
-\usepackage{amsmath}
-\usepackage[pdfborder={0 0 0}]{hyperref}
-
-\makeatletter 
-\g@addto@macro\@verbatim\small 
-\makeatother 
-
-\begin{document}
-  \title{%(title0)s}
-
-	%(AUTHORS)s
-  \maketitle
 """
 
 END_DOCUMENT=r"""
-	\bibliographystyle{plainnat}
-	\bibliography{papers}
-	\end{document}
-"""
-
-END_DOCUMENT_PLAIN=r"""
-	\bibliographystyle{plain}
-	\bibliography{papers}
-	\end{document}
+</body>
+</html>
 """
 
 END_DOCUMENT_NIL = ''
@@ -146,21 +92,9 @@ class Macros(object):
 		self.texdown = texdown
 		self.end_document = END_DOCUMENT_NIL
 
-	def macro_sigplanpaper(self, block_lines):
-		self.end_document = END_DOCUMENT_PLAIN
-		return SIGPLANPAPER % self.anypaper(block_lines, author = self.make_author)
-
 	def macro_techreport(self, block_lines):
-		self.end_document = END_DOCUMENT_PLAIN
+		self.end_document = END_DOCUMENT
 		return TECHREPORT % self.anypaper(block_lines, author = self.make_author_joined)
-
-	def macro_acceptancetestingreport(self, block_lines):
-		self.end_document = END_DOCUMENT_PLAIN
-		return ACCEPTANCE_TESTING_REPORT % self.anypaper(block_lines, author = self.make_author_plain)
-
-	def macro_nictatr(self, block_lines):
-		self.end_document = END_DOCUMENT_PLAIN
-		return NICTATR % self.anypaper(block_lines, author = self.make_author_plain)
 
 	def macro_end_document(self, args):
 		return self.end_document
@@ -440,41 +374,23 @@ class Macros(object):
 	def separate_tabs(self, line):
 		return re.split(r'\t+', line)
 
-	def make_author(self, authorlist):
-		authors = []
-		for name, email, affiliation in authorlist:
-			all_info = [name]
-			if email:
-				all_info.append(r"\\" + "\n\t\t%s" % (email))
-			if affiliation:
-				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-			authors.append(r"	\authorinfo{%s}" % (''.join(all_info))+ "\n")
-		return ''.join(authors)
-
-	def make_author_plain(self, authorlist):
-		authors = []
-		for name, email, affiliation in authorlist:
-			all_info = [name]
-			if email:
-				all_info.append(r"\\" + "\n\t\t%s" % (email))
-			if affiliation:
-				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-			authors.append(r"	\author{%s}" % (''.join(all_info))+ "\n")
-		return ''.join(authors)
-
 	def make_author_joined(self, authorlist):
+		name_template = '<b>%(name)s</b>'
+		email_template = '<a href="mailto:%(email)s">%(email)s</a>'
+		affiliation_template = '%(affiliation)s'
+
 		authors = []
 		for name, email, affiliation in authorlist:
-			all_info = [name]
-			if email:
-				all_info.append(r"\\" + "\n\t\t%s" % (email))
+			all_info = [name_template % {'name': name}]
+
 			if affiliation:
-				all_info.append(r"\\" + "\n\t\t%s" % (affiliation))
-			authors.append(''.join(all_info)+ "\n")
-		if authors:
-			return r"	\author{" + '\\and\n	'.join(authors) + "}"
-		else:
-			return ''
+				all_info.append(affiliation_template % {'affiliation': affiliation})
+
+			if email:
+				all_info.append(email_template % {'email': email})
+
+			authors.append(', '.join(all_info))
+		return '<br>'.join(authors)
 
 	def anypaper(self, block_lines, author = None):
 		info = {'AUTHORS': '?authors',
